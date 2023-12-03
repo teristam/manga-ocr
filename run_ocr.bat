@@ -1,0 +1,3 @@
+call activate game2text
+manga_ocr
+pause
