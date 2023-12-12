@@ -12,12 +12,13 @@ import gradio as gr
 import jinja2
 import re
 from jinja2 import FileSystemLoader, Environment
-env  = Environment(loader=FileSystemLoader('templates/'))
-
+import glob
+from pathlib import Path
+from openpyxl import load_workbook
+import os
 # %%
-story = pd.read_excel('game_scripts/Final Fantasy 06.xlsx', names=[
-    'index', 'cha_jp', 'cha_eng', 'jp', 'eng'], sheet_name='Story')
-story = story.fillna('')
+env  = Environment(loader=FileSystemLoader('templates/'))
+story = None
 # %%
 
 def find_match(s, ref, col2match='jp'):
@@ -67,10 +68,15 @@ def parse_text_output(r):
 #%%
 pretrained_model_name_or_path='kha-white/manga-ocr-base'
 mocr = MangaOcr(pretrained_model_name_or_path, force_cpu=False)
+# mocr = None
 
 verbose = True
 def process_clipboard(state):
-    # print('processing')
+    story = state['story']
+    if story is None:
+        load_gamescript(dropdown.value, state)        
+        story = state['story']
+    
     last_text = state['last_text']
     try:
         img = ImageGrab.grabclipboard()
@@ -102,15 +108,43 @@ def process_clipboard(state):
                 return state, last_text
         else:
             return state, last_text
+        
+def load_gamescript(filename, state):
+    #load the gamescript file
+    path2load = os.path.join('game_scripts', filename)
+    print('Loading ', path2load) 
+    # check the script content to see how to load it
+    wb = load_workbook(path2load, read_only=True)
+    if 'Story' in wb.sheetnames:
+        story = pd.read_excel(path2load, names=[
+            'index', 'cha_jp', 'cha_eng', 'jp', 'eng'], sheet_name='Story')
+    else:
+        story = pd.read_excel(path2load)
+
+    story = story.fillna('')
+    state['story'] = story
+    return state
+    
+file_list = [Path(p).name for p in glob.glob('game_scripts/*.xlsx')]
 
 with gr.Blocks() as demo:
-    state = gr.State({'last_img':None, 'last_text': None})
-    btn = gr.Button('Start')
+    state = gr.State({'last_img':None, 'last_text': None, 'story':None})
+    with gr.Row():
+        dropdown = gr.Dropdown(file_list, 
+                                   value='Final Fantasy 06.xlsx',
+                                   interactive= True,
+                                   label='Choose game script')
+        btn = gr.Button('Start')
     output = gr.HTML()
+    
+    
+    dropdown.change(load_gamescript, 
+                    [dropdown, state],
+                    [state]) #need to specify itself as the input
 
     btn.click(
         process_clipboard,
-        [state],
+        [state], #if more than one argument apart from the state, the state should come last
         [state, output],
         every=0.5
     )
