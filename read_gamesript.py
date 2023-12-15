@@ -15,6 +15,7 @@ from jinja2 import FileSystemLoader, Environment
 import glob
 from pathlib import Path
 from openpyxl import load_workbook
+from tkinter import filedialog, Tk
 import os
 # %%
 env  = Environment(loader=FileSystemLoader('templates/'))
@@ -127,19 +128,54 @@ def load_gamescript(filename, state):
     
 file_list = [Path(p).name for p in glob.glob('game_scripts/*.xlsx')]
 
+def get_dir_and_file(file_path):
+    dir_path, file_name = os.path.split(file_path)
+    return (dir_path, file_name)
+
+
+def get_any_file_path(file_path=''):
+
+    current_file_path = file_path
+
+    initial_dir, initial_file = get_dir_and_file(file_path)
+
+    root = Tk()
+    root.wm_attributes('-topmost', 1)
+    root.withdraw()
+    file_path = filedialog.askopenfilename(
+        initialdir=initial_dir,
+        initialfile=initial_file,
+    )
+    root.destroy()
+
+    if file_path == '':
+        file_path = current_file_path
+
+    return file_path
+
 with gr.Blocks() as demo:
     state = gr.State({'last_img':None, 'last_text': None, 'story':None})
     with gr.Row():
-        dropdown = gr.Dropdown(file_list, 
-                                   value='Final Fantasy 06.xlsx',
-                                   interactive= True,
-                                   label='Choose game script')
-        btn = gr.Button('Start')
+        game_script_path = gr.Textbox('Path to game script file')
+        select_file_btn = gr.Button(
+            'choose file'
+        )
+        select_file_btn.click(
+            get_any_file_path,
+            inputs = [game_script_path],
+            outputs= game_script_path
+        )
+            
+        # dropdown = gr.Dropdown(file_list, 
+        #                            value='Final Fantasy 06.xlsx',
+        #                            interactive= True,
+        #                            label='Choose game script')
+    btn = gr.Button('Start')
     output = gr.HTML()
     
     
-    dropdown.change(load_gamescript, 
-                    [dropdown, state],
+    game_script_path.change(load_gamescript, 
+                    [game_script_path, state],
                     [state]) #need to specify itself as the input
 
     btn.click(
