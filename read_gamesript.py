@@ -17,10 +17,9 @@ from pathlib import Path
 from openpyxl import load_workbook
 from tkinter import filedialog, Tk
 import os
+from collections import deque
 # %%
 env  = Environment(loader=FileSystemLoader('templates/'))
-story = None
-# %%
 
 def find_match(s, ref, col2match='jp'):
     matched_lines = difflib.get_close_matches(s, ref[col2match], cutoff=0.5)
@@ -39,29 +38,19 @@ def process_results(mocr, img_or_path):
 
     return text
 
-# %%
-# def parse_text_output(t):
-#     # convert the dataframe from script matching to text
-#     s = ''
-#     for _,row in t.iterrows():
-#         s+=row['jp'].replace('\\n', '<br/>')
-#         s+='<br/><br/>'
-#         s+=row['eng'].replace('\\n', '<br/>')
-#         s+='<hr/>'
-#     return s
-
 def clean_up(s):
     s = re.sub('<.*?>', '', s)
-    s = re.sub(r'\n','<br/>', s)
+    s = re.sub(r'\\n','<br/>', s)
     return s
 
-def parse_text_output(r):
+def parse_text_output(history):
     template = env.get_template('text_table.txt')
     # clean up the dataframe
-    r.loc[:,'jp'] = r['jp'].apply(clean_up)
-    r.loc[:,'eng'] = r['eng'].apply(clean_up)
+    for df in history:
+        df.loc[:,'jp'] = df['jp'].apply(clean_up)
+        df.loc[:,'eng'] = df['eng'].apply(clean_up)
 
-    return template.render(dataframe=r)
+    return template.render(history=history)
     
 # parse_text_output(r)
 
@@ -72,11 +61,15 @@ mocr = MangaOcr(pretrained_model_name_or_path, force_cpu=False)
 # mocr = None
 
 verbose = True
-def process_clipboard(state):
+def process_clipboard(game_script_path, state):
     story = state['story']
+    history = state['history']
+    
+    #load game script on first run
     if story is None:
-        load_gamescript(dropdown.value, state)        
+        load_gamescript(game_script_path, state)        
         story = state['story']
+        assert story is not None
     
     last_text = state['last_text']
     try:
@@ -93,26 +86,37 @@ def process_clipboard(state):
             logger.warning('Error while reading from clipboard ({})'.format(error))
     else:
         if isinstance(img, Image.Image):
-            # print('Now analyzing')
+            '''
+            if found a match in game script file, return the corresponding rows in the gamescript
+            If no match is found, return the OCR text
+            only do recognization if the image is different to save processing power
+            '''
             if not are_images_identical(img, state['last_img']):
+                print('Processing new image')
                 text = process_results(mocr, img)
                 matched_line = find_match(text, story)
                 if matched_line is not None:
-                    pyperclip.copy(matched_line.iloc[0].jp)
-                    text = parse_text_output(matched_line[['jp','eng']])
-                    state['last_img'] = img 
-                    state['last_text']  = text
-                    return state, text
+                    jptext = matched_line.iloc[0].jp
+                    df_results = matched_line[['jp','eng']]
                 else:
-                    return state, text
+                    jptext = text
+                    df_results = pd.DataFrame([{'jp':text, 'eng':''}])
+                    
+                pyperclip.copy(jptext)
+                state['last_img'] = img 
+                state['last_text']  = text
+                
+                history.appendleft(df_results)
             else:
-                return state, last_text
-        else:
-            return state, last_text
+                print('Same images. skipping')
+            
+        html = parse_text_output(history)
+        state['history'] = history
+        return state, html
         
 def load_gamescript(filename, state):
     #load the gamescript file
-    path2load = os.path.join('game_scripts', filename)
+    path2load = filename
     print('Loading ', path2load) 
     # check the script content to see how to load it
     wb = load_workbook(path2load, read_only=True)
@@ -153,45 +157,32 @@ def get_any_file_path(file_path=''):
 
     return file_path
 
-with gr.Blocks() as demo:
-    state = gr.State({'last_img':None, 'last_text': None, 'story':None})
+with open('style.css') as f:
+    css = f.read()
+    
+with gr.Blocks(css=css) as demo:
+    state = gr.State({'last_img':None, 'last_text': None, 'story':None, 'history':deque(maxlen=10)})
     with gr.Row():
-        game_script_path = gr.Textbox('Path to game script file')
+        game_script_path = gr.Textbox(Path(__file__).parent/'game_scripts/Final Fantasy 06.xlsx',label='')
         select_file_btn = gr.Button(
-            'choose file'
+            'choose file',
+            elem_id='small_btn'
         )
         select_file_btn.click(
             get_any_file_path,
             inputs = [game_script_path],
-            outputs= game_script_path
+            outputs= game_script_path,
         )
-            
-        # dropdown = gr.Dropdown(file_list, 
-        #                            value='Final Fantasy 06.xlsx',
-        #                            interactive= True,
-        #                            label='Choose game script')
     btn = gr.Button('Start')
-    output = gr.HTML()
-    
-    
-    game_script_path.change(load_gamescript, 
-                    [game_script_path, state],
-                    [state]) #need to specify itself as the input
+    output = gr.HTML(elem_id='text_table')
 
     btn.click(
         process_clipboard,
-        [state], #if more than one argument apart from the state, the state should come last
+        [game_script_path,state], #if more than one argument apart from the state, the state should come last
         [state, output],
-        every=0.5
+        every=1
     )
     
 if __name__ == '__main__':
     demo.launch()
-    
-    
-'''
-TODO:
-1. automatically identify textbox to extract
-2. clean up text
-3. include text to voice function
-'''
+

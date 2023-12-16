@@ -1,0 +1,13 @@
+#small_btn{
+    height: auto;
+    min-width: auto;
+    flex-grow: 0;
+}
+
+table {
+    width: 100%;
+}
+
+table td {
+    width: 50%;
+}

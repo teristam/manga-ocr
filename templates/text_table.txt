@@ -1,18 +1,27 @@
 <table>
     <thead>
         <tr>
-            {% for column in dataframe.columns %}
-            <th>{{ column }}</th>
-            {% endfor %}
+            {% if history|length>0 %}
+                {% for column in history[0].columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            {% endif %}
         </tr>
     </thead>
     <tbody>
-        {% for row in dataframe.itertuples() %}
-        <tr>
-            {% for cell in row[1:] %}
-            <td>{{ cell }}</td>
+        {% for df in history %}
+            {% for row in df.itertuples() %}
+            <tr>
+                {% for cell in row[1:] %}
+                <td>{{ cell }}</td>
+                {% endfor %}
+            </tr>
             {% endfor %}
-        </tr>
+        
+            <tr>
+                <td></td>
+                <td></td>
+            </tr>
         {% endfor %}
     </tbody>
 </table>
