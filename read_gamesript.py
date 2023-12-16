@@ -43,13 +43,14 @@ def clean_up(s):
     s = re.sub(r'\\n','<br/>', s)
     return s
 
+def clean_up_df(df):
+    df.loc[:,'jp'] = df['jp'].apply(clean_up)
+    df.loc[:,'eng'] = df['eng'].apply(clean_up)
+    
+    return df
+
 def parse_text_output(history):
     template = env.get_template('text_table.txt')
-    # clean up the dataframe
-    for df in history:
-        df.loc[:,'jp'] = df['jp'].apply(clean_up)
-        df.loc[:,'eng'] = df['eng'].apply(clean_up)
-
     return template.render(history=history)
     
 # parse_text_output(r)
@@ -98,6 +99,7 @@ def process_clipboard(game_script_path, state):
                 if matched_line is not None:
                     jptext = matched_line.iloc[0].jp
                     df_results = matched_line[['jp','eng']]
+                    df_results = clean_up_df(df_results)
                 else:
                     jptext = text
                     df_results = pd.DataFrame([{'jp':text, 'eng':''}])
