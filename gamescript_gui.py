@@ -1,4 +1,4 @@
-from nicegui import ui, app
+from nicegui import ui, app, run
 import utils
 from PIL import ImageGrab, Image
 import pandas as pd 
@@ -7,7 +7,8 @@ from loguru import logger
 from manga_ocr import MangaOcr
 from collections import deque
 from jinja2 import FileSystemLoader, Environment
-
+import openai_utils
+import asyncio
 #%%
 
 env  = Environment(loader=FileSystemLoader('templates/'))
@@ -99,17 +100,37 @@ def process_clipboard():
 
             print_results.refresh() # need to call the refresh function directly
 
-        
+
+def receive_response(chunk):
+    return chunk.choices[0].delta.content
+
+async def askGPT(dialog, chatDiag, user_input):
+    # submit query to GPT
+    dialog.open()
+    completion = openai_utils.submit_message(user_input)
+    text = ''
+    for chunk in completion:
+        # content  = await asyncio.get_event_loop().run_in_executor(None, receive_response, chunk)
+        content = await run.io_bound(receive_response, chunk)
+        if content is not None:
+            text += content
+            chatDiag.set_content(text)
 
 @ui.refreshable
 def print_results():
-    # logger.info(len(data['history']))
+    # draw the OCR or matched results
     for res in data['history']:
         with ui.card() as card:
             card.tailwind.margin('my-2').width('full')
+            
             for _, row in res.iterrows():
+                with ui.dialog() as dialog,  ui.card():
+                    chatDiag = ui.markdown()
+                    
                 ui.label(row['jp']).tailwind.font_size('lg')
                 ui.label(row['eng']).tailwind.text_color('gray-500')
+                query = '/grammar '+row['jp']
+                ui.button('Ask grammar', on_click=lambda query=query: askGPT(dialog, chatDiag, query)) #note: lambda will use late binding
         
 
 def start_scan():
